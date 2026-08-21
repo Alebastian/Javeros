@@ -1,4 +1,4 @@
-# tendrá nombre diferente hasta que recuerde con mis compañeros el nombre
+# Javeros (equipo)
 
 ## Integrantes:
 - Alejandro Sebastián Hernández García
