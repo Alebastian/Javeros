@@ -52,16 +52,12 @@ ASA : nat                      { Num $1 }
     | '(' "add1" ASA ')'       { Add1 $3 }
     | '(' "sub1" ASA ')'       { Sub1 $3 }
     | '(' "zero?" ASA ')'      { ZeroP $3 }
-
-
-
-
-
-
-
-
-
-
+    | '(' "expt" ASA ASA ')'   { ZeroP $3 $4 }
+    | '(' '<' [ASA] ')'        { Lt $3 } 
+    | '(' '>' [ASA] ')'        { Gt $3 }
+    | '(' "<=" [ASA] ')'       { Le $3 } 
+    | '(' ">=" [ASA] ')'       { Ge $3 }
+    | '(' "eq" ASA ASA ')'     { EqP $3 $4 }
 
 -- RETO 3:
 -- Agrega un no terminal para representar dos o mas argumentos.
