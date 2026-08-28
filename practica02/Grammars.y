@@ -32,39 +32,28 @@ import Lexer (Token(..), lexer)
 
 %%
 
-ASA : nat                      { Num $1 }
-    | bool                     { Boolean $1 }
-  
--- RETO 2:
--- Agrega las producciones para:
---   * operadores n-arios con al menos dos argumentos;
---   * operadores estrictamente binarios: expt y eq;
---   * operadores unarios: not, add1, sub1, zero?.  
-    
-    
-    | '(' '+' secuencia ')'        { Add $3 } 
-    | '(' '-' secuencia ')'        { Sub $3 }
-    | '(' '*' secuencia ')'	       { Mul $3 }
-    | '(' '/' secuencia ')'	       { Div $3 }
-    | '(' "and" secuencia ')'      { And $3 } 
-    | '(' "or" secuencia ')'       { Or $3 }
-    | '(' "not" ASA ')'	       { Not $3 }
-    | '(' "add1" ASA ')'       { Add1 $3 }
-    | '(' "sub1" ASA ')'       { Sub1 $3 }
-    | '(' "zero?" ASA ')'      { ZeroP $3 }
-    | '(' "expt" ASA ASA ')'   { Expt $3 $4 }
-    | '(' '<' secuencia ')'        { Lt $3 } 
-    | '(' '>' secuencia ')'        { Gt $3 }
-    | '(' "<=" secuencia ')'       { Le $3 } 
-    | '(' ">=" secuencia ')'       { Ge $3 }
-    | '(' "eq" ASA ASA ')'     { EqP $3 $4 }
+ASA : nat                     { Num $1 }
+    | bool                    { Boolean $1 }
+    | '(' '+' lista ')'       { Add $3 } 
+    | '(' '-' lista ')'       { Sub $3 }
+    | '(' '*' lista ')'       { Mul $3 }
+    | '(' '/' lista ')'       { Div $3 }
+    | '(' "and" lista ')'     { And $3 } 
+    | '(' "or" lista ')'      { Or $3 }
+    | '(' "not" ASA ')'       { Not $3 }
+    | '(' "add1" ASA ')'      { Add1 $3 }
+    | '(' "sub1" ASA ')'      { Sub1 $3 }
+    | '(' "zero?" ASA ')'     { ZeroP $3 }
+    | '(' "expt" ASA ASA ')'  { Expt $3 $4 }
+    | '(' '<' lista ')'       { Lt $3 } 
+    | '(' '>' lista ')'       { Gt $3 }
+    | '(' "<=" lista ')'      { Le $3 } 
+    | '(' ">=" lista ')'      { Ge $3 }
+    | '(' "eq" ASA ASA ')'    { EqP $3 $4 }
 
--- RETO 3:
--- Agrega un no terminal para representar dos o mas argumentos.
--- El resultado debe ser una lista de ASA.
-
-secuencia : ASA ASA       {[$1, $2]}
-  |ASA secuencia          {$1 : $2}
+-- RETO 3: No terminal para representar dos o más argumentos.
+lista : ASA ASA               { [$1, $2] }
+      | ASA lista             { $1 : $2 }
 
 {
 parseError :: [Token] -> a
