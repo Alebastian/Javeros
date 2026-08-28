@@ -1,19 +1,15 @@
-{-# OPTIONS_GHC -fno-warn-unused-binds -fno-warn-missing-signatures #-}
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
+{-# OPTIONS_GHC -fno-warn-tabs #-}
+{-# OPTIONS_GHC -fno-warn-unused-binds #-}
+{-# OPTIONS_GHC -fno-warn-unused-imports #-}
 {-# LANGUAGE CPP #-}
 {-# LINE 1 "Lexer.x" #-}
 module Lexer (Token(..), lexer) where
 
 import Data.Char (isSpace)
-#if __GLASGOW_HASKELL__ >= 603
 #include "ghcconfig.h"
-#elif defined(__GLASGOW_HASKELL__)
-#include "config.h"
-#endif
-#if __GLASGOW_HASKELL__ >= 503
-import Data.Array
-#else
-import Array
-#endif
+import qualified Data.Array
+import qualified Data.Char
 #define ALEX_BASIC 1
 -- -----------------------------------------------------------------------------
 -- Alex wrapper code.
@@ -21,28 +17,30 @@ import Array
 -- This code is in the PUBLIC DOMAIN; you may copy it freely and use
 -- it for any purpose whatsoever.
 
-#if defined(ALEX_MONAD) || defined(ALEX_MONAD_BYTESTRING)
+#if defined(ALEX_MONAD) || defined(ALEX_MONAD_BYTESTRING) || defined(ALEX_MONAD_STRICT_TEXT)
 import Control.Applicative as App (Applicative (..))
 #endif
 
+#if defined(ALEX_STRICT_TEXT) || defined (ALEX_POSN_STRICT_TEXT) || defined(ALEX_MONAD_STRICT_TEXT)
+import qualified Data.Text
+#endif
+
 import Data.Word (Word8)
+
 #if defined(ALEX_BASIC_BYTESTRING) || defined(ALEX_POSN_BYTESTRING) || defined(ALEX_MONAD_BYTESTRING)
 
 import Data.Int (Int64)
-import qualified Data.Char
 import qualified Data.ByteString.Lazy     as ByteString
 import qualified Data.ByteString.Internal as ByteString (w2c)
 
 #elif defined(ALEX_STRICT_BYTESTRING)
 
-import qualified Data.Char
 import qualified Data.ByteString          as ByteString
 import qualified Data.ByteString.Internal as ByteString hiding (ByteString)
 import qualified Data.ByteString.Unsafe   as ByteString
 
 #else
 
-import Data.Char (ord)
 import qualified Data.Bits
 
 -- | Encode a Haskell String to a list of Word8 values, in UTF8 format.
@@ -50,7 +48,7 @@ utf8Encode :: Char -> [Word8]
 utf8Encode = uncurry (:) . utf8Encode'
 
 utf8Encode' :: Char -> (Word8, [Word8])
-utf8Encode' c = case go (ord c) of
+utf8Encode' c = case go (Data.Char.ord c) of
                   (x, xs) -> (fromIntegral x, map fromIntegral xs)
  where
   go oc
@@ -97,6 +95,50 @@ alexGetByte (_,_,[],[]) = Nothing
 alexGetByte (p,_,[],(c:s))  = let p' = alexMove p c
                               in case utf8Encode' c of
                                    (b, bs) -> p' `seq`  Just (b, (p', c, bs, s))
+#endif
+
+#if defined (ALEX_STRICT_TEXT)
+type AlexInput = (Char,           -- previous char
+                  [Byte],         -- pending bytes on current char
+                  Data.Text.Text) -- current input string
+
+ignorePendingBytes :: AlexInput -> AlexInput
+ignorePendingBytes (c,_ps,s) = (c,[],s)
+
+alexInputPrevChar :: AlexInput -> Char
+alexInputPrevChar (c,_bs,_s) = c
+
+alexGetByte :: AlexInput -> Maybe (Byte,AlexInput)
+alexGetByte (c,(b:bs),s) = Just (b,(c,bs,s))
+alexGetByte (_,[],s) = case Data.Text.uncons s of
+                            Just (c, cs) ->
+                              case utf8Encode' c of
+                                (b, bs) -> Just (b, (c, bs, cs))
+                            Nothing ->
+                              Nothing
+#endif
+
+#if defined (ALEX_POSN_STRICT_TEXT) || defined(ALEX_MONAD_STRICT_TEXT)
+type AlexInput = (AlexPosn,       -- current position,
+                  Char,           -- previous char
+                  [Byte],         -- pending bytes on current char
+                  Data.Text.Text) -- current input string
+
+ignorePendingBytes :: AlexInput -> AlexInput
+ignorePendingBytes (p,c,_ps,s) = (p,c,[],s)
+
+alexInputPrevChar :: AlexInput -> Char
+alexInputPrevChar (_p,c,_bs,_s) = c
+
+alexGetByte :: AlexInput -> Maybe (Byte,AlexInput)
+alexGetByte (p,c,(b:bs),s) = Just (b,(p,c,bs,s))
+alexGetByte (p,_,[],s) = case Data.Text.uncons s of
+                            Just (c, cs) ->
+                              let p' = alexMove p c
+                              in case utf8Encode' c of
+                                   (b, bs) -> p' `seq`  Just (b, (p', c, bs, cs))
+                            Nothing ->
+                              Nothing
 #endif
 
 #if defined(ALEX_POSN_BYTESTRING) || defined(ALEX_MONAD_BYTESTRING)
@@ -168,7 +210,7 @@ alexGetByte (AlexInput {alexStr=cs,alexBytePos=n}) =
 -- `move_pos' calculates the new position after traversing a given character,
 -- assuming the usual eight character tab stops.
 
-#if defined(ALEX_POSN) || defined(ALEX_MONAD) || defined(ALEX_POSN_BYTESTRING) || defined(ALEX_MONAD_BYTESTRING) || defined(ALEX_GSCAN)
+#if defined(ALEX_POSN) || defined(ALEX_MONAD) || defined(ALEX_POSN_BYTESTRING) || defined(ALEX_MONAD_BYTESTRING) || defined(ALEX_GSCAN) || defined (ALEX_POSN_STRICT_TEXT) || defined(ALEX_MONAD_STRICT_TEXT)
 data AlexPosn = AlexPn !Int !Int !Int
         deriving (Eq, Show, Ord)
 
@@ -184,14 +226,20 @@ alexMove (AlexPn a l c) _    = AlexPn (a+1)  l     (c+1)
 -- -----------------------------------------------------------------------------
 -- Monad (default and with ByteString input)
 
-#if defined(ALEX_MONAD) || defined(ALEX_MONAD_BYTESTRING)
+#if defined(ALEX_MONAD) || defined(ALEX_MONAD_BYTESTRING) || defined(ALEX_MONAD_STRICT_TEXT)
 data AlexState = AlexState {
         alex_pos :: !AlexPosn,  -- position at current input location
-#ifndef ALEX_MONAD_BYTESTRING
+#ifdef ALEX_MONAD_STRICT_TEXT
+        alex_inp :: Data.Text.Text,
+        alex_chr :: !Char,
+        alex_bytes :: [Byte],
+#endif /* ALEX_MONAD_STRICT_TEXT */
+#ifdef ALEX_MONAD
         alex_inp :: String,     -- the current input
         alex_chr :: !Char,      -- the character before the input
         alex_bytes :: [Byte],
-#else /* ALEX_MONAD_BYTESTRING */
+#endif /* ALEX_MONAD */
+#ifdef ALEX_MONAD_BYTESTRING
         alex_bpos:: !Int64,     -- bytes consumed so far
         alex_inp :: ByteString.ByteString,      -- the current input
         alex_chr :: !Char,      -- the character before the input
@@ -204,15 +252,10 @@ data AlexState = AlexState {
 
 -- Compile with -funbox-strict-fields for best results!
 
-#ifndef ALEX_MONAD_BYTESTRING
+#ifdef ALEX_MONAD
 runAlex :: String -> Alex a -> Either String a
 runAlex input__ (Alex f)
    = case f (AlexState {alex_bytes = [],
-#else /* ALEX_MONAD_BYTESTRING */
-runAlex :: ByteString.ByteString -> Alex a -> Either String a
-runAlex input__ (Alex f)
-   = case f (AlexState {alex_bpos = 0,
-#endif /* ALEX_MONAD_BYTESTRING */
                         alex_pos = alexStartPos,
                         alex_inp = input__,
                         alex_chr = '\n',
@@ -221,6 +264,35 @@ runAlex input__ (Alex f)
 #endif
                         alex_scd = 0}) of Left msg -> Left msg
                                           Right ( _, a ) -> Right a
+#endif
+
+#ifdef ALEX_MONAD_BYTESTRING
+runAlex :: ByteString.ByteString -> Alex a -> Either String a
+runAlex input__ (Alex f)
+   = case f (AlexState {alex_bpos = 0,
+                        alex_pos = alexStartPos,
+                        alex_inp = input__,
+                        alex_chr = '\n',
+#ifdef ALEX_MONAD_USER_STATE
+                        alex_ust = alexInitUserState,
+#endif
+                        alex_scd = 0}) of Left msg -> Left msg
+                                          Right ( _, a ) -> Right a
+#endif
+
+#ifdef ALEX_MONAD_STRICT_TEXT
+runAlex :: Data.Text.Text -> Alex a -> Either String a
+runAlex input__ (Alex f)
+   = case f (AlexState {alex_bytes = [],
+                        alex_pos = alexStartPos,
+                        alex_inp = input__,
+                        alex_chr = '\n',
+#ifdef ALEX_MONAD_USER_STATE
+                        alex_ust = alexInitUserState,
+#endif
+                        alex_scd = 0}) of Left msg -> Left msg
+                                          Right ( _, a ) -> Right a
+#endif
 
 newtype Alex a = Alex { unAlex :: AlexState -> Either String (AlexState, a) }
 
@@ -243,28 +315,51 @@ instance Monad Alex where
                                 Right (s',a) -> unAlex (k a) s'
   return = App.pure
 
+
+#ifdef ALEX_MONAD
 alexGetInput :: Alex AlexInput
 alexGetInput
-#ifndef ALEX_MONAD_BYTESTRING
  = Alex $ \s@AlexState{alex_pos=pos,alex_chr=c,alex_bytes=bs,alex_inp=inp__} ->
         Right (s, (pos,c,bs,inp__))
-#else /* ALEX_MONAD_BYTESTRING */
+#endif
+
+#ifdef ALEX_MONAD_BYTESTRING
+alexGetInput :: Alex AlexInput
+alexGetInput
  = Alex $ \s@AlexState{alex_pos=pos,alex_bpos=bpos,alex_chr=c,alex_inp=inp__} ->
         Right (s, (pos,c,inp__,bpos))
-#endif /* ALEX_MONAD_BYTESTRING */
+#endif
 
+#ifdef ALEX_MONAD_STRICT_TEXT
+alexGetInput :: Alex AlexInput
+alexGetInput
+ = Alex $ \s@AlexState{alex_pos=pos,alex_chr=c,alex_bytes=bs,alex_inp=inp__} ->
+        Right (s, (pos,c,bs,inp__))
+#endif
+
+#ifdef ALEX_MONAD
 alexSetInput :: AlexInput -> Alex ()
-#ifndef ALEX_MONAD_BYTESTRING
 alexSetInput (pos,c,bs,inp__)
  = Alex $ \s -> case s{alex_pos=pos,alex_chr=c,alex_bytes=bs,alex_inp=inp__} of
-#else /* ALEX_MONAD_BYTESTRING */
+                    state__@(AlexState{}) -> Right (state__, ())
+#endif
+
+#ifdef ALEX_MONAD_BYTESTRING
+alexSetInput :: AlexInput -> Alex ()
 alexSetInput (pos,c,inp__,bpos)
  = Alex $ \s -> case s{alex_pos=pos,
                        alex_bpos=bpos,
                        alex_chr=c,
                        alex_inp=inp__} of
-#endif /* ALEX_MONAD_BYTESTRING */
-                  state__@(AlexState{}) -> Right (state__, ())
+                    state__@(AlexState{}) -> Right (state__, ())
+#endif
+
+#ifdef ALEX_MONAD_STRICT_TEXT
+alexSetInput :: AlexInput -> Alex ()
+alexSetInput (pos,c,bs,inp__)
+ = Alex $ \s -> case s{alex_pos=pos,alex_chr=c,alex_bytes=bs,alex_inp=inp__} of
+                    state__@(AlexState{}) -> Right (state__, ())
+#endif
 
 alexError :: String -> Alex a
 alexError message = Alex $ const $ Left message
@@ -275,20 +370,17 @@ alexGetStartCode = Alex $ \s@AlexState{alex_scd=sc} -> Right (s, sc)
 alexSetStartCode :: Int -> Alex ()
 alexSetStartCode sc = Alex $ \s -> Right (s{alex_scd=sc}, ())
 
-#if !defined(ALEX_MONAD_BYTESTRING) && defined(ALEX_MONAD_USER_STATE)
+#if defined(ALEX_MONAD_USER_STATE)
 alexGetUserState :: Alex AlexUserState
 alexGetUserState = Alex $ \s@AlexState{alex_ust=ust} -> Right (s,ust)
 
 alexSetUserState :: AlexUserState -> Alex ()
 alexSetUserState ss = Alex $ \s -> Right (s{alex_ust=ss}, ())
-#endif /* !defined(ALEX_MONAD_BYTESTRING) && defined(ALEX_MONAD_USER_STATE) */
+#endif /* defined(ALEX_MONAD_USER_STATE) */
 
+#ifdef ALEX_MONAD
 alexMonadScan = do
-#ifndef ALEX_MONAD_BYTESTRING
   inp__ <- alexGetInput
-#else /* ALEX_MONAD_BYTESTRING */
-  inp__@(_,_,_,n) <- alexGetInput
-#endif /* ALEX_MONAD_BYTESTRING */
   sc <- alexGetStartCode
   case alexScan inp__ sc of
     AlexEOF -> alexEOF
@@ -296,22 +388,55 @@ alexMonadScan = do
     AlexSkip  inp__' _len -> do
         alexSetInput inp__'
         alexMonadScan
-#ifndef ALEX_MONAD_BYTESTRING
     AlexToken inp__' len action -> do
-#else /* ALEX_MONAD_BYTESTRING */
-    AlexToken inp__'@(_,_,_,n') _ action -> let len = n'-n in do
-#endif /* ALEX_MONAD_BYTESTRING */
         alexSetInput inp__'
         action (ignorePendingBytes inp__) len
+#endif
+
+#ifdef ALEX_MONAD_BYTESTRING
+alexMonadScan = do
+  inp__@(_,_,_,n) <- alexGetInput
+  sc <- alexGetStartCode
+  case alexScan inp__ sc of
+    AlexEOF -> alexEOF
+    AlexError ((AlexPn _ line column),_,_,_) -> alexError $ "lexical error at line " ++ (show line) ++ ", column " ++ (show column)
+    AlexSkip  inp__' _len -> do
+        alexSetInput inp__'
+        alexMonadScan
+    AlexToken inp__'@(_,_,_,n') _ action -> let len = n'-n in do
+        alexSetInput inp__'
+        action (ignorePendingBytes inp__) len
+#endif
+
+#ifdef ALEX_MONAD_STRICT_TEXT
+alexMonadScan = do
+  inp__ <- alexGetInput
+  sc <- alexGetStartCode
+  case alexScan inp__ sc of
+    AlexEOF -> alexEOF
+    AlexError ((AlexPn _ line column),_,_,_) -> alexError $ "lexical error at line " ++ (show line) ++ ", column " ++ (show column)
+    AlexSkip  inp__' _len -> do
+        alexSetInput inp__'
+        alexMonadScan
+    AlexToken inp__' len action -> do
+        alexSetInput inp__'
+        action (ignorePendingBytes inp__) len
+#endif
 
 -- -----------------------------------------------------------------------------
 -- Useful token actions
 
-#ifndef ALEX_MONAD_BYTESTRING
+#ifdef ALEX_MONAD
 type AlexAction result = AlexInput -> Int -> Alex result
-#else /* ALEX_MONAD_BYTESTRING */
+#endif
+
+#ifdef ALEX_MONAD_BYTESTRING
 type AlexAction result = AlexInput -> Int64 -> Alex result
-#endif /* ALEX_MONAD_BYTESTRING */
+#endif
+
+#ifdef ALEX_MONAD_STRICT_TEXT
+type AlexAction result = AlexInput -> Int -> Alex result
+#endif
 
 -- just ignore this token and scan another one
 -- skip :: AlexAction result
@@ -327,14 +452,22 @@ andBegin :: AlexAction result -> Int -> AlexAction result
   alexSetStartCode code
   action input__ len
 
-#ifndef ALEX_MONAD_BYTESTRING
+#ifdef ALEX_MONAD
 token :: (AlexInput -> Int -> token) -> AlexAction token
-#else /* ALEX_MONAD_BYTESTRING */
-token :: (AlexInput -> Int64 -> token) -> AlexAction token
-#endif /* ALEX_MONAD_BYTESTRING */
 token t input__ len = return (t input__ len)
-#endif /* defined(ALEX_MONAD) || defined(ALEX_MONAD_BYTESTRING) */
+#endif
 
+#ifdef ALEX_MONAD_BYTESTRING
+token :: (AlexInput -> Int64 -> token) -> AlexAction token
+token t input__ len = return (t input__ len)
+#endif
+
+#ifdef ALEX_MONAD_STRICT_TEXT
+token :: (AlexInput -> Int -> token) -> AlexAction token
+token t input__ len = return (t input__ len)
+#endif
+
+#endif /* defined(ALEX_MONAD) || defined(ALEX_MONAD_BYTESTRING) || defined(ALEX_MONAD_STRICT_TEXT) */
 
 -- -----------------------------------------------------------------------------
 -- Basic wrapper
@@ -395,6 +528,28 @@ alexScanTokens str = go (AlexInput '\n' str 0)
 
 #endif
 
+#ifdef ALEX_STRICT_TEXT
+-- alexScanTokens :: Data.Text.Text -> [token]
+alexScanTokens str = go ('\n',[],str)
+  where go inp__@(_,_bs,s) =
+          case alexScan inp__ 0 of
+                AlexEOF -> []
+                AlexError _ -> error "lexical error"
+                AlexSkip  inp__' _len  -> go inp__'
+                AlexToken inp__' len act -> act (Data.Text.take len s) : go inp__'
+#endif
+
+#ifdef ALEX_POSN_STRICT_TEXT
+-- alexScanTokens :: Data.Text.Text -> [token]
+alexScanTokens str = go (alexStartPos,'\n',[],str)
+  where go inp__@(pos,_,_bs,s) =
+          case alexScan inp__ 0 of
+                AlexEOF -> []
+                AlexError ((AlexPn _ line column),_,_,_) -> error $ "lexical error at line " ++ (show line) ++ ", column " ++ (show column)
+                AlexSkip  inp__' _len  -> go inp__'
+                AlexToken inp__' len act -> act pos (Data.Text.take len s) : go inp__'
+#endif
+
 
 -- -----------------------------------------------------------------------------
 -- Posn wrapper
@@ -449,177 +604,173 @@ alex_gscan stop__ p c bs inp__ (sc,state__) =
 #endif
 alex_tab_size :: Int
 alex_tab_size = 8
-alex_base :: Array Int Int
-alex_base = listArray (0 :: Int, 56)
+alex_base :: Data.Array.Array Int Int
+alex_base = Data.Array.listArray (0 :: Int, 52)
   [ -8
+  , 0
+  , 0
+  , 0
   , -55
+  , -54
+  , 0
+  , 0
+  , 0
+  , -41
+  , 0
+  , -40
   , 0
   , -53
-  , -51
   , 0
-  , -105
-  , 0
-  , -89
-  , -37
-  , 0
+  , -90
+  , -99
   , -104
+  , 248
+  , -102
+  , 184
+  , 0
+  , -98
   , -84
-  , -33
+  , -94
   , 0
-  , -83
-  , -97
-  , -92
-  , -43
+  , 312
+  , 440
+  , -96
+  , -93
+  , -80
+  , -77
+  , 553
+  , 618
   , 0
   , 0
-  , 0
-  , 0
-  , 105
-  , 170
-  , 234
-  , 362
-  , 490
-  , 746
-  , 0
-  , -71
   , 46
   , 0
   , 0
   , 0
   , 0
   , 0
-  , -94
-  , -88
+  , -91
   , 0
   , -66
   , 0
   , 12
+  , 31
   , 826
-  , 836
   , 0
-  , -75
   , -72
   , 0
   , -85
-  , 0
-  , 0
-  , 0
-  , -90
-  , -82
-  , 0
-  , 0
   ]
 
-alex_table :: Array Int Int
-alex_table = listArray (0 :: Int, 1091)
+alex_table :: Data.Array.Array Int Int
+alex_table = Data.Array.listArray (0 :: Int, 1081)
   [ 0
-  , 31
-  , 31
-  , 31
-  , 31
-  , 31
-  , 2
-  , 30
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 6
   , 7
-  , 4
-  , 5
-  , 9
   , 10
   , 12
-  , 13
-  , 54
   , 14
-  , 17
-  , 16
-  , 18
-  , 19
-  , 1
-  , 36
-  , 37
+  , 28
+  , 42
   , 31
-  , 45
-  , 52
-  , 40
-  , 8
-  , 48
-  , 53
-  , 0
-  , 32
-  , 33
-  , 50
-  , 34
-  , 41
-  , 35
-  , 46
-  , 51
-  , 44
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 39
-  , 0
-  , 55
-  , 0
-  , 56
-  , 31
-  , 31
-  , 31
-  , 31
-  , 31
-  , 42
-  , 42
-  , 42
-  , 42
-  , 42
-  , 42
-  , 42
-  , 42
-  , 42
-  , 42
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
-  , 31
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
   , 3
-  , 0
-  , 0
-  , 0
-  , 0
-  , 47
-  , 0
-  , 0
-  , 0
-  , 6
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
-  , 0
-  , 38
-  , 49
-  , 0
-  , 0
-  , 0
+  , 8
+  , 30
+  , 13
+  , 24
+  , 19
+  , 9
   , 11
+  , 29
+  , 0
+  , 36
+  , 41
+  , 50
+  , 44
+  , 49
+  , 51
+  , 0
+  , 0
+  , 37
+  , 38
+  , 1
+  , 39
+  , 45
+  , 40
+  , 0
+  , 2
+  , 48
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 43
+  , 0
+  , 4
+  , 0
+  , 5
+  , 36
+  , 36
+  , 36
+  , 36
+  , 36
+  , 46
+  , 46
+  , 46
+  , 46
+  , 46
+  , 46
+  , 46
+  , 46
+  , 46
+  , 46
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 36
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 47
+  , 23
+  , 0
+  , 0
+  , 0
+  , 22
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 16
+  , 52
+  , 0
+  , 0
+  , 0
+  , 17
   , 0
   , 0
   , 0
@@ -698,566 +849,57 @@ alex_table = listArray (0 :: Int, 1091)
   , -1
   , -1
   , -1
-  , 28
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
+  , 18
   , 25
-  , 27
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 24
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 20
   , 26
-  , 20
-  , 20
-  , 20
-  , 23
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , 24
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , 25
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 33
   , 27
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 21
-  , 28
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
-  , 22
+  , 35
+  , 35
+  , 35
+  , 32
   , -1
   , -1
   , -1
@@ -1386,26 +1028,525 @@ alex_table = listArray (0 :: Int, 1091)
   , -1
   , -1
   , -1
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 43
-  , 42
-  , 42
-  , 42
-  , 42
-  , 42
-  , 42
-  , 42
-  , 42
-  , 42
-  , 42
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 18
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 25
+  , 26
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 34
+  , 33
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 20
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , -1
+  , 46
+  , 46
+  , 46
+  , 46
+  , 46
+  , 46
+  , 46
+  , 46
+  , 46
+  , 46
   , 0
   , 0
   , 0
@@ -1606,8 +1747,8 @@ alex_table = listArray (0 :: Int, 1091)
   , 0
   ]
 
-alex_check :: Array Int Int
-alex_check = listArray (0 :: Int, 1091)
+alex_check :: Data.Array.Array Int Int
+alex_check = Data.Array.listArray (0 :: Int, 1081)
   [ -1
   , 9
   , 10
@@ -1615,30 +1756,30 @@ alex_check = listArray (0 :: Int, 1091)
   , 12
   , 13
   , 61
-  , 60
-  , 113
-  , 62
   , 61
-  , 100
   , 49
-  , 117
-  , 98
-  , 120
   , 49
-  , 114
+  , 63
   , 101
   , 111
-  , 63
-  , 92
+  , 117
   , 116
-  , 111
-  , 32
+  , 113
   , 100
+  , 111
+  , 114
+  , 112
+  , 100
+  , 98
+  , 120
+  , -1
+  , 32
   , 116
+  , 110
   , 35
   , 100
   , 114
-  , 112
+  , -1
   , -1
   , 40
   , 41
@@ -1646,7 +1787,7 @@ alex_check = listArray (0 :: Int, 1091)
   , 43
   , 102
   , 45
-  , 110
+  , -1
   , 47
   , 48
   , 49
@@ -1687,16 +1828,16 @@ alex_check = listArray (0 :: Int, 1091)
   , -1
   , -1
   , 32
-  , -1
-  , -1
-  , -1
-  , -1
-  , -1
-  , 92
-  , -1
-  , -1
-  , -1
-  , -1
+  , 48
+  , 49
+  , 50
+  , 51
+  , 52
+  , 53
+  , 54
+  , 55
+  , 56
+  , 57
   , 97
   , -1
   , -1
@@ -1728,504 +1869,6 @@ alex_check = listArray (0 :: Int, 1091)
   , -1
   , -1
   , -1
-  , 128
-  , 129
-  , 130
-  , 131
-  , 132
-  , 133
-  , 134
-  , 135
-  , 136
-  , 137
-  , 138
-  , 139
-  , 140
-  , 141
-  , 142
-  , 143
-  , 144
-  , 145
-  , 146
-  , 147
-  , 148
-  , 149
-  , 150
-  , 151
-  , 152
-  , 153
-  , 154
-  , 155
-  , 156
-  , 157
-  , 158
-  , 159
-  , 160
-  , 161
-  , 162
-  , 163
-  , 164
-  , 165
-  , 166
-  , 167
-  , 168
-  , 169
-  , 170
-  , 171
-  , 172
-  , 173
-  , 174
-  , 175
-  , 176
-  , 177
-  , 178
-  , 179
-  , 180
-  , 181
-  , 182
-  , 183
-  , 184
-  , 185
-  , 186
-  , 187
-  , 188
-  , 189
-  , 190
-  , 191
-  , 192
-  , 193
-  , 194
-  , 195
-  , 196
-  , 197
-  , 198
-  , 199
-  , 200
-  , 201
-  , 202
-  , 203
-  , 204
-  , 205
-  , 206
-  , 207
-  , 208
-  , 209
-  , 210
-  , 211
-  , 212
-  , 213
-  , 214
-  , 215
-  , 216
-  , 217
-  , 218
-  , 219
-  , 220
-  , 221
-  , 222
-  , 223
-  , 224
-  , 225
-  , 226
-  , 227
-  , 228
-  , 229
-  , 230
-  , 231
-  , 232
-  , 233
-  , 234
-  , 235
-  , 236
-  , 237
-  , 238
-  , 239
-  , 240
-  , 241
-  , 242
-  , 243
-  , 244
-  , 245
-  , 246
-  , 247
-  , 248
-  , 249
-  , 250
-  , 251
-  , 252
-  , 253
-  , 254
-  , 255
-  , 143
-  , 144
-  , 145
-  , 146
-  , 147
-  , 148
-  , 149
-  , 150
-  , 151
-  , 152
-  , 153
-  , 154
-  , 155
-  , 156
-  , 157
-  , 158
-  , 159
-  , 160
-  , 161
-  , 162
-  , 163
-  , 164
-  , 165
-  , 166
-  , 167
-  , 168
-  , 169
-  , 170
-  , 171
-  , 172
-  , 173
-  , 174
-  , 175
-  , 176
-  , 177
-  , 178
-  , 179
-  , 180
-  , 181
-  , 182
-  , 183
-  , 184
-  , 185
-  , 186
-  , 187
-  , 188
-  , 189
-  , 190
-  , 191
-  , 192
-  , 193
-  , 194
-  , 195
-  , 196
-  , 197
-  , 198
-  , 199
-  , 200
-  , 201
-  , 202
-  , 203
-  , 204
-  , 205
-  , 206
-  , 207
-  , 208
-  , 209
-  , 210
-  , 211
-  , 212
-  , 213
-  , 214
-  , 215
-  , 216
-  , 217
-  , 218
-  , 219
-  , 220
-  , 221
-  , 222
-  , 223
-  , 224
-  , 225
-  , 226
-  , 227
-  , 228
-  , 229
-  , 230
-  , 231
-  , 232
-  , 233
-  , 234
-  , 235
-  , 236
-  , 237
-  , 238
-  , 239
-  , 240
-  , 241
-  , 242
-  , 243
-  , 244
-  , 245
-  , 246
-  , 247
-  , 248
-  , 249
-  , 250
-  , 251
-  , 252
-  , 253
-  , 254
-  , 255
-  , 191
-  , 192
-  , 193
-  , 194
-  , 195
-  , 196
-  , 197
-  , 198
-  , 199
-  , 200
-  , 201
-  , 202
-  , 203
-  , 204
-  , 205
-  , 206
-  , 207
-  , 208
-  , 209
-  , 210
-  , 211
-  , 212
-  , 213
-  , 214
-  , 215
-  , 216
-  , 217
-  , 218
-  , 219
-  , 220
-  , 221
-  , 222
-  , 223
-  , 224
-  , 225
-  , 226
-  , 227
-  , 228
-  , 229
-  , 230
-  , 231
-  , 232
-  , 233
-  , 234
-  , 235
-  , 236
-  , 237
-  , 238
-  , 239
-  , 240
-  , 241
-  , 242
-  , 243
-  , 244
-  , 245
-  , 246
-  , 247
-  , 248
-  , 249
-  , 250
-  , 251
-  , 252
-  , 253
-  , 254
-  , 255
-  , 192
-  , 193
-  , 194
-  , 195
-  , 196
-  , 197
-  , 198
-  , 199
-  , 200
-  , 201
-  , 202
-  , 203
-  , 204
-  , 205
-  , 206
-  , 207
-  , 208
-  , 209
-  , 210
-  , 211
-  , 212
-  , 213
-  , 214
-  , 215
-  , 216
-  , 217
-  , 218
-  , 219
-  , 220
-  , 221
-  , 222
-  , 223
-  , 224
-  , 225
-  , 226
-  , 227
-  , 228
-  , 229
-  , 230
-  , 231
-  , 232
-  , 233
-  , 234
-  , 235
-  , 236
-  , 237
-  , 238
-  , 239
-  , 240
-  , 241
-  , 242
-  , 243
-  , 244
-  , 245
-  , 246
-  , 247
-  , 248
-  , 249
-  , 250
-  , 251
-  , 252
-  , 253
-  , 254
-  , 255
-  , 128
-  , 129
-  , 130
-  , 131
-  , 132
-  , 133
-  , 134
-  , 135
-  , 136
-  , 137
-  , 138
-  , 139
-  , 140
-  , 141
-  , 142
-  , 143
-  , 144
-  , 145
-  , 146
-  , 147
-  , 148
-  , 149
-  , 150
-  , 151
-  , 152
-  , 153
-  , 154
-  , 155
-  , 156
-  , 157
-  , 158
-  , 159
-  , 160
-  , 161
-  , 162
-  , 163
-  , 164
-  , 165
-  , 166
-  , 167
-  , 168
-  , 169
-  , 170
-  , 171
-  , 172
-  , 173
-  , 174
-  , 175
-  , 176
-  , 177
-  , 178
-  , 179
-  , 180
-  , 181
-  , 182
-  , 183
-  , 184
-  , 185
-  , 186
-  , 187
-  , 188
-  , 189
-  , 190
-  , 191
-  , 192
-  , 193
-  , 194
-  , 195
-  , 196
-  , 197
-  , 198
-  , 199
-  , 200
-  , 201
-  , 202
-  , 203
-  , 204
-  , 205
-  , 206
-  , 207
-  , 208
-  , 209
-  , 210
-  , 211
-  , 212
-  , 213
-  , 214
-  , 215
-  , 216
-  , 217
-  , 218
-  , 219
-  , 220
-  , 221
-  , 222
-  , 223
-  , 224
-  , 225
-  , 226
-  , 227
-  , 228
-  , 229
-  , 230
-  , 231
-  , 232
-  , 233
-  , 234
-  , 235
-  , 236
-  , 237
-  , 238
-  , 239
-  , 240
-  , 241
-  , 242
-  , 243
-  , 244
-  , 245
-  , 246
-  , 247
-  , 248
-  , 249
-  , 250
-  , 251
-  , 252
-  , 253
-  , 254
-  , 255
   , 128
   , 129
   , 130
@@ -2482,16 +2125,504 @@ alex_check = listArray (0 :: Int, 1091)
   , 125
   , 126
   , 127
-  , 48
-  , 49
-  , 50
-  , 51
-  , 52
-  , 53
-  , 54
-  , 55
-  , 56
-  , 57
+  , 192
+  , 193
+  , 194
+  , 195
+  , 196
+  , 197
+  , 198
+  , 199
+  , 200
+  , 201
+  , 202
+  , 203
+  , 204
+  , 205
+  , 206
+  , 207
+  , 208
+  , 209
+  , 210
+  , 211
+  , 212
+  , 213
+  , 214
+  , 215
+  , 216
+  , 217
+  , 218
+  , 219
+  , 220
+  , 221
+  , 222
+  , 223
+  , 224
+  , 225
+  , 226
+  , 227
+  , 228
+  , 229
+  , 230
+  , 231
+  , 232
+  , 233
+  , 234
+  , 235
+  , 236
+  , 237
+  , 238
+  , 239
+  , 240
+  , 241
+  , 242
+  , 243
+  , 244
+  , 245
+  , 246
+  , 247
+  , 248
+  , 249
+  , 250
+  , 251
+  , 252
+  , 253
+  , 254
+  , 255
+  , 128
+  , 129
+  , 130
+  , 131
+  , 132
+  , 133
+  , 134
+  , 135
+  , 136
+  , 137
+  , 138
+  , 139
+  , 140
+  , 141
+  , 142
+  , 143
+  , 144
+  , 145
+  , 146
+  , 147
+  , 148
+  , 149
+  , 150
+  , 151
+  , 152
+  , 153
+  , 154
+  , 155
+  , 156
+  , 157
+  , 158
+  , 159
+  , 160
+  , 161
+  , 162
+  , 163
+  , 164
+  , 165
+  , 166
+  , 167
+  , 168
+  , 169
+  , 170
+  , 171
+  , 172
+  , 173
+  , 174
+  , 175
+  , 176
+  , 177
+  , 178
+  , 179
+  , 180
+  , 181
+  , 182
+  , 183
+  , 184
+  , 185
+  , 186
+  , 187
+  , 188
+  , 189
+  , 190
+  , 191
+  , 192
+  , 193
+  , 194
+  , 195
+  , 196
+  , 197
+  , 198
+  , 199
+  , 200
+  , 201
+  , 202
+  , 203
+  , 204
+  , 205
+  , 206
+  , 207
+  , 208
+  , 209
+  , 210
+  , 211
+  , 212
+  , 213
+  , 214
+  , 215
+  , 216
+  , 217
+  , 218
+  , 219
+  , 220
+  , 221
+  , 222
+  , 223
+  , 224
+  , 225
+  , 226
+  , 227
+  , 228
+  , 229
+  , 230
+  , 231
+  , 232
+  , 233
+  , 234
+  , 235
+  , 236
+  , 237
+  , 238
+  , 239
+  , 240
+  , 241
+  , 242
+  , 243
+  , 244
+  , 245
+  , 246
+  , 247
+  , 248
+  , 249
+  , 250
+  , 251
+  , 252
+  , 253
+  , 254
+  , 255
+  , 128
+  , 129
+  , 130
+  , 131
+  , 132
+  , 133
+  , 134
+  , 135
+  , 136
+  , 137
+  , 138
+  , 139
+  , 140
+  , 141
+  , 142
+  , 143
+  , 144
+  , 145
+  , 146
+  , 147
+  , 148
+  , 149
+  , 150
+  , 151
+  , 152
+  , 153
+  , 154
+  , 155
+  , 156
+  , 157
+  , 158
+  , 159
+  , 160
+  , 161
+  , 162
+  , 163
+  , 164
+  , 165
+  , 166
+  , 167
+  , 168
+  , 169
+  , 170
+  , 171
+  , 172
+  , 173
+  , 174
+  , 175
+  , 176
+  , 177
+  , 178
+  , 179
+  , 180
+  , 181
+  , 182
+  , 183
+  , 184
+  , 185
+  , 186
+  , 187
+  , 188
+  , 189
+  , 190
+  , 191
+  , 192
+  , 193
+  , 194
+  , 195
+  , 196
+  , 197
+  , 198
+  , 199
+  , 200
+  , 201
+  , 202
+  , 203
+  , 204
+  , 205
+  , 206
+  , 207
+  , 208
+  , 209
+  , 210
+  , 211
+  , 212
+  , 213
+  , 214
+  , 215
+  , 216
+  , 217
+  , 218
+  , 219
+  , 220
+  , 221
+  , 222
+  , 223
+  , 224
+  , 225
+  , 226
+  , 227
+  , 228
+  , 229
+  , 230
+  , 231
+  , 232
+  , 233
+  , 234
+  , 235
+  , 236
+  , 237
+  , 238
+  , 239
+  , 240
+  , 241
+  , 242
+  , 243
+  , 244
+  , 245
+  , 246
+  , 247
+  , 248
+  , 249
+  , 250
+  , 251
+  , 252
+  , 253
+  , 254
+  , 255
+  , 143
+  , 144
+  , 145
+  , 146
+  , 147
+  , 148
+  , 149
+  , 150
+  , 151
+  , 152
+  , 153
+  , 154
+  , 155
+  , 156
+  , 157
+  , 158
+  , 159
+  , 160
+  , 161
+  , 162
+  , 163
+  , 164
+  , 165
+  , 166
+  , 167
+  , 168
+  , 169
+  , 170
+  , 171
+  , 172
+  , 173
+  , 174
+  , 175
+  , 176
+  , 177
+  , 178
+  , 179
+  , 180
+  , 181
+  , 182
+  , 183
+  , 184
+  , 185
+  , 186
+  , 187
+  , 188
+  , 189
+  , 190
+  , 191
+  , 192
+  , 193
+  , 194
+  , 195
+  , 196
+  , 197
+  , 198
+  , 199
+  , 200
+  , 201
+  , 202
+  , 203
+  , 204
+  , 205
+  , 206
+  , 207
+  , 208
+  , 209
+  , 210
+  , 211
+  , 212
+  , 213
+  , 214
+  , 215
+  , 216
+  , 217
+  , 218
+  , 219
+  , 220
+  , 221
+  , 222
+  , 223
+  , 224
+  , 225
+  , 226
+  , 227
+  , 228
+  , 229
+  , 230
+  , 231
+  , 232
+  , 233
+  , 234
+  , 235
+  , 236
+  , 237
+  , 238
+  , 239
+  , 240
+  , 241
+  , 242
+  , 243
+  , 244
+  , 245
+  , 246
+  , 247
+  , 248
+  , 249
+  , 250
+  , 251
+  , 252
+  , 253
+  , 254
+  , 255
+  , 191
+  , 192
+  , 193
+  , 194
+  , 195
+  , 196
+  , 197
+  , 198
+  , 199
+  , 200
+  , 201
+  , 202
+  , 203
+  , 204
+  , 205
+  , 206
+  , 207
+  , 208
+  , 209
+  , 210
+  , 211
+  , 212
+  , 213
+  , 214
+  , 215
+  , 216
+  , 217
+  , 218
+  , 219
+  , 220
+  , 221
+  , 222
+  , 223
+  , 224
+  , 225
+  , 226
+  , 227
+  , 228
+  , 229
+  , 230
+  , 231
+  , 232
+  , 233
+  , 234
+  , 235
+  , 236
+  , 237
+  , 238
+  , 239
+  , 240
+  , 241
+  , 242
+  , 243
+  , 244
+  , 245
+  , 246
+  , 247
+  , 248
+  , 249
+  , 250
+  , 251
+  , 252
+  , 253
+  , 254
+  , 255
   , 48
   , 49
   , 50
@@ -2702,11 +2833,9 @@ alex_check = listArray (0 :: Int, 1091)
   , -1
   ]
 
-alex_deflt :: Array Int Int
-alex_deflt = listArray (0 :: Int, 56)
-  [ 29
-  , -1
-  , -1
+alex_deflt :: Data.Array.Array Int Int
+alex_deflt = Data.Array.listArray (0 :: Int, 52)
+  [ 21
   , -1
   , -1
   , -1
@@ -2725,25 +2854,23 @@ alex_deflt = listArray (0 :: Int, 56)
   , -1
   , -1
   , 21
-  , 22
-  , 29
+  , -1
   , 21
-  , 22
-  , 29
-  , -1
-  , -1
-  , 29
   , -1
   , -1
   , -1
+  , -1
+  , 21
   , -1
   , -1
   , -1
   , -1
   , -1
   , -1
-  , -1
-  , -1
+  , 34
+  , 25
+  , 25
+  , 34
   , -1
   , -1
   , -1
@@ -2763,54 +2890,51 @@ alex_deflt = listArray (0 :: Int, 56)
   , -1
   ]
 
-alex_accept = listArray (0 :: Int, 56)
+alex_accept = Data.Array.listArray (0 :: Int, 52)
   [ AlexAccNone
-  , AlexAccNone
-  , AlexAcc 31
   , AlexAcc 30
-  , AlexAccNone
   , AlexAcc 29
   , AlexAcc 28
   , AlexAcc 27
-  , AlexAccNone
-  , AlexAccNone
   , AlexAcc 26
   , AlexAcc 25
-  , AlexAccNone
-  , AlexAccNone
   , AlexAcc 24
   , AlexAcc 23
   , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
   , AlexAcc 22
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
-  , AlexAccNone
   , AlexAccNone
   , AlexAcc 21
   , AlexAccNone
-  , AlexAccSkip
   , AlexAcc 20
   , AlexAcc 19
   , AlexAcc 18
   , AlexAcc 17
-  , AlexAcc 16
   , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAcc 16
   , AlexAcc 15
   , AlexAcc 14
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccNone
+  , AlexAccSkip
   , AlexAcc 13
   , AlexAcc 12
   , AlexAcc 11
   , AlexAcc 10
   , AlexAcc 9
-  , AlexAcc 8
   , AlexAccNone
+  , AlexAcc 8
   , AlexAcc 7
   , AlexAcc 6
   , AlexAcc 5
@@ -2818,44 +2942,42 @@ alex_accept = listArray (0 :: Int, 56)
   , AlexAcc 3
   , AlexAcc 2
   , AlexAccNone
-  , AlexAccNone
   , AlexAcc 1
   , AlexAcc 0
   ]
 
-alex_actions = array (0 :: Int, 32)
-  [ (31,alex_action_17)
-  , (30,alex_action_23)
-  , (29,alex_action_18)
-  , (28,alex_action_23)
-  , (27,alex_action_19)
-  , (26,alex_action_20)
-  , (25,alex_action_23)
-  , (24,alex_action_21)
-  , (23,alex_action_23)
-  , (22,alex_action_22)
-  , (21,alex_action_23)
-  , (20,alex_action_1)
-  , (19,alex_action_2)
-  , (18,alex_action_3)
-  , (17,alex_action_4)
-  , (16,alex_action_5)
+alex_actions = Data.Array.array (0 :: Int, 31)
+  [ (30,alex_action_12)
+  , (29,alex_action_13)
+  , (28,alex_action_14)
+  , (27,alex_action_15)
+  , (26,alex_action_16)
+  , (25,alex_action_17)
+  , (24,alex_action_18)
+  , (23,alex_action_19)
+  , (22,alex_action_20)
+  , (21,alex_action_21)
+  , (20,alex_action_22)
+  , (19,alex_action_23)
+  , (18,alex_action_23)
+  , (17,alex_action_23)
+  , (16,alex_action_23)
   , (15,alex_action_23)
-  , (14,alex_action_6)
-  , (13,alex_action_23)
-  , (12,alex_action_7)
-  , (11,alex_action_8)
-  , (10,alex_action_9)
-  , (9,alex_action_9)
-  , (8,alex_action_10)
+  , (14,alex_action_23)
+  , (13,alex_action_1)
+  , (12,alex_action_2)
+  , (11,alex_action_3)
+  , (10,alex_action_4)
+  , (9,alex_action_5)
+  , (8,alex_action_6)
   , (7,alex_action_23)
-  , (6,alex_action_11)
-  , (5,alex_action_23)
-  , (4,alex_action_12)
-  , (3,alex_action_13)
-  , (2,alex_action_14)
-  , (1,alex_action_15)
-  , (0,alex_action_16)
+  , (6,alex_action_7)
+  , (5,alex_action_8)
+  , (4,alex_action_9)
+  , (3,alex_action_9)
+  , (2,alex_action_10)
+  , (1,alex_action_11)
+  , (0,alex_action_23)
   ]
 
 alex_action_1 = \_ -> TokenPA
@@ -2902,12 +3024,16 @@ alex_action_23 = \s -> error ("Lexical error: caracter no reconocido = "
 #  define FAST_INT Int#
 -- Do not remove this comment. Required to fix CPP parsing when using GCC and a clang-compiled alex.
 #  if __GLASGOW_HASKELL__ > 706
-#    define GTE(n,m) (tagToEnum# (n >=# m))
-#    define EQ(n,m) (tagToEnum# (n ==# m))
+#    define CMP_GEQ(n,m) (((n) >=# (m)) :: Int#)
+#    define CMP_EQ(n,m) (((n) ==# (m)) :: Int#)
+#    define CMP_MKBOOL(x) ((GHC.Exts.tagToEnum# (x)) :: Bool)
 #  else
-#    define GTE(n,m) (n >=# m)
-#    define EQ(n,m) (n ==# m)
+#    define CMP_GEQ(n,m) (((n) >= (m)) :: Bool)
+#    define CMP_EQ(n,m) (((n) == (m)) :: Bool)
+#    define CMP_MKBOOL(x) ((x) :: Bool)
 #  endif
+#  define GTE(n,m) CMP_MKBOOL(CMP_GEQ(n,m))
+#  define EQ(n,m) CMP_MKBOOL(CMP_EQ(n,m))
 #  define PLUS(n,m) (n +# m)
 #  define MINUS(n,m) (n -# m)
 #  define TIMES(n,m) (n *# m)
@@ -2929,65 +3055,47 @@ alex_action_23 = \s -> error ("Lexical error: caracter no reconocido = "
 #ifdef ALEX_GHC
 data AlexAddr = AlexA# Addr#
 -- Do not remove this comment. Required to fix CPP parsing when using GCC and a clang-compiled alex.
-#if __GLASGOW_HASKELL__ < 503
-uncheckedShiftL# = shiftL#
-#endif
 
 {-# INLINE alexIndexInt16OffAddr #-}
 alexIndexInt16OffAddr :: AlexAddr -> Int# -> Int#
 alexIndexInt16OffAddr (AlexA# arr) off =
-#ifdef WORDS_BIGENDIAN
-  narrow16Int# i
-  where
-        i    = word2Int# ((high `uncheckedShiftL#` 8#) `or#` low)
-        high = int2Word# (ord# (indexCharOffAddr# arr (off' +# 1#)))
-        low  = int2Word# (ord# (indexCharOffAddr# arr off'))
-        off' = off *# 2#
-#else
 #if __GLASGOW_HASKELL__ >= 901
-  int16ToInt#
+  GHC.Exts.int16ToInt# -- qualified import because it doesn't exist on older GHC's
 #endif
-    (indexInt16OffAddr# arr off)
+#ifdef WORDS_BIGENDIAN
+  (GHC.Exts.word16ToInt16# (GHC.Exts.wordToWord16# (GHC.Exts.byteSwap16# (GHC.Exts.word16ToWord# (GHC.Exts.int16ToWord16#
+#endif
+  (indexInt16OffAddr# arr off)
+#ifdef WORDS_BIGENDIAN
+  )))))
 #endif
 #else
-alexIndexInt16OffAddr arr off = arr ! off
+alexIndexInt16OffAddr = (Data.Array.!)
 #endif
 
 #ifdef ALEX_GHC
 {-# INLINE alexIndexInt32OffAddr #-}
 alexIndexInt32OffAddr :: AlexAddr -> Int# -> Int#
 alexIndexInt32OffAddr (AlexA# arr) off =
-#ifdef WORDS_BIGENDIAN
-  narrow32Int# i
-  where
-   i    = word2Int# ((b3 `uncheckedShiftL#` 24#) `or#`
-                     (b2 `uncheckedShiftL#` 16#) `or#`
-                     (b1 `uncheckedShiftL#` 8#) `or#` b0)
-   b3   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 3#)))
-   b2   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 2#)))
-   b1   = int2Word# (ord# (indexCharOffAddr# arr (off' +# 1#)))
-   b0   = int2Word# (ord# (indexCharOffAddr# arr off'))
-   off' = off *# 4#
-#else
 #if __GLASGOW_HASKELL__ >= 901
-  int32ToInt#
+  GHC.Exts.int32ToInt# -- qualified import because it doesn't exist on older GHC's
 #endif
-    (indexInt32OffAddr# arr off)
+#ifdef WORDS_BIGENDIAN
+  (GHC.Exts.word32ToInt32# (GHC.Exts.wordToWord32# (GHC.Exts.byteSwap32# (GHC.Exts.word32ToWord# (GHC.Exts.int32ToWord32#
+#endif
+  (indexInt32OffAddr# arr off)
+#ifdef WORDS_BIGENDIAN
+  )))))
 #endif
 #else
-alexIndexInt32OffAddr arr off = arr ! off
+alexIndexInt32OffAddr = (Data.Array.!)
 #endif
 
 #ifdef ALEX_GHC
-
-#if __GLASGOW_HASKELL__ < 503
-quickIndex arr i = arr ! i
-#else
 -- GHC >= 503, unsafeAt is available from Data.Array.Base.
 quickIndex = unsafeAt
-#endif
 #else
-quickIndex arr i = arr ! i
+quickIndex = (Data.Array.!)
 #endif
 
 -- -----------------------------------------------------------------------------
@@ -3001,7 +3109,12 @@ data AlexReturn a
 
 -- alexScan :: AlexInput -> StartCode -> AlexReturn a
 alexScan input__ IBOX(sc)
-  = alexScanUser undefined input__ IBOX(sc)
+  = alexScanUser (error "alex rule requiring context was invoked by alexScan; use alexScanUser instead?") input__ IBOX(sc)
+
+-- If the generated alexScan/alexScanUser functions are called multiple times
+-- in the same file, alexScanUser gets broken out into a separate function and
+-- increases memory usage. Make sure GHC inlines this function and optimizes it.
+{-# INLINE alexScanUser #-}
 
 alexScanUser user__ input__ IBOX(sc)
   = case alex_scan_tkn user__ input__ ILIT(0) input__ sc AlexNone of
@@ -3009,26 +3122,26 @@ alexScanUser user__ input__ IBOX(sc)
     case alexGetByte input__ of
       Nothing ->
 #ifdef ALEX_DEBUG
-                                   trace ("End of input.") $
+                                   Debug.Trace.trace ("End of input.") $
 #endif
                                    AlexEOF
       Just _ ->
 #ifdef ALEX_DEBUG
-                                   trace ("Error.") $
+                                   Debug.Trace.trace ("Error.") $
 #endif
                                    AlexError input__'
 
   (AlexLastSkip input__'' len, _) ->
 #ifdef ALEX_DEBUG
-    trace ("Skipping.") $
+    Debug.Trace.trace ("Skipping.") $
 #endif
     AlexSkip input__'' len
 
   (AlexLastAcc k input__''' len, _) ->
 #ifdef ALEX_DEBUG
-    trace ("Accept.") $
+    Debug.Trace.trace ("Accept.") $
 #endif
-    AlexToken input__''' len (alex_actions ! k)
+    AlexToken input__''' len ((Data.Array.!) alex_actions k)
 
 
 -- Push the input through the DFA, remembering the most recent accepting
@@ -3044,7 +3157,7 @@ alex_scan_tkn user__ orig_input len input__ s last_acc =
      Nothing -> (new_acc, input__)
      Just (c, new_input) ->
 #ifdef ALEX_DEBUG
-      trace ("State: " ++ show IBOX(s) ++ ", char: " ++ show c) $
+      Debug.Trace.trace ("State: " ++ show IBOX(s) ++ ", char: " ++ show c ++ " " ++ (show . Data.Char.chr . fromIntegral) c) $
 #endif
       case fromIntegral c of { IBOX(ord_c) ->
         let
@@ -3115,7 +3228,7 @@ alexPrevCharIs c _ input__ _ _ = c == alexInputPrevChar input__
 alexPrevCharMatches f _ input__ _ _ = f (alexInputPrevChar input__)
 
 --alexPrevCharIsOneOfPred :: Array Char Bool -> AlexAccPred _
-alexPrevCharIsOneOf arr _ input__ _ _ = arr ! alexInputPrevChar input__
+alexPrevCharIsOneOf arr _ input__ _ _ = arr Data.Array.! alexInputPrevChar input__
 
 --alexRightContext :: Int -> AlexAccPred _
 alexRightContext IBOX(sc) user__ _ _ input__ =
