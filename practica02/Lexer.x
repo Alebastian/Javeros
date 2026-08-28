@@ -41,7 +41,7 @@ tokens :-
  \or                    { \_ -> TokenOr }
  \*                     { \_ -> TokenMul }
  \/                     { \_ -> TokenDiv }
- \expt                  { \_ -> TokenExp }
+ \expt                  { \_ -> TokenExpt }
  \<                     { \_ -> TokenLE }
  \>			{ \_ -> TokenGE }
  \<\=			{ \_ -> TokenLT }

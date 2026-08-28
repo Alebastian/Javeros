@@ -42,27 +42,29 @@ ASA : nat                      { Num $1 }
 --   * operadores unarios: not, add1, sub1, zero?.  
     
     
-    | '(' '+' [ASA] ')'        { Add $3 } 
-    | '(' '-' [ASA] ')'        { Sub $3 }
-    | '(' '*' [ASA] ')'	       { Mult $3 }
-    | '(' '/' [ASA] ')'	       { Div $3 }
-    | '(' "and" [ASA] ')'      { And $3 } 
-    | '(' "or" [ASA] ')'       { Or $3 }
+    | '(' '+' secuencia ')'        { Add $3 } 
+    | '(' '-' secuencia ')'        { Sub $3 }
+    | '(' '*' secuencia ')'	       { Mul $3 }
+    | '(' '/' secuencia ')'	       { Div $3 }
+    | '(' "and" secuencia ')'      { And $3 } 
+    | '(' "or" secuencia ')'       { Or $3 }
     | '(' "not" ASA ')'	       { Not $3 }
     | '(' "add1" ASA ')'       { Add1 $3 }
     | '(' "sub1" ASA ')'       { Sub1 $3 }
     | '(' "zero?" ASA ')'      { ZeroP $3 }
-    | '(' "expt" ASA ASA ')'   { ZeroP $3 $4 }
-    | '(' '<' [ASA] ')'        { Lt $3 } 
-    | '(' '>' [ASA] ')'        { Gt $3 }
-    | '(' "<=" [ASA] ')'       { Le $3 } 
-    | '(' ">=" [ASA] ')'       { Ge $3 }
+    | '(' "expt" ASA ASA ')'   { Expt $3 $4 }
+    | '(' '<' secuencia ')'        { Lt $3 } 
+    | '(' '>' secuencia ')'        { Gt $3 }
+    | '(' "<=" secuencia ')'       { Le $3 } 
+    | '(' ">=" secuencia ')'       { Ge $3 }
     | '(' "eq" ASA ASA ')'     { EqP $3 $4 }
 
 -- RETO 3:
 -- Agrega un no terminal para representar dos o mas argumentos.
 -- El resultado debe ser una lista de ASA.
 
+secuencia : ASA ASA       {[$1, $2]}
+  |ASA secuencia          {$1 : $2}
 {
 parseError :: [Token] -> a
 parseError toks = error ("Parse error: " ++ show toks)
