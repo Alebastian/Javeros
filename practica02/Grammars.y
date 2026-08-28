@@ -65,6 +65,7 @@ ASA : nat                      { Num $1 }
 
 secuencia : ASA ASA       {[$1, $2]}
   |ASA secuencia          {$1 : $2}
+
 {
 parseError :: [Token] -> a
 parseError toks = error ("Parse error: " ++ show toks)
