@@ -37,6 +37,7 @@ import Lexer (Token(..))
 
 ASA : nat                           { Num $1 }
     | bool                          { Boolean $1 }
+    | var                           { Id $1 }
     | '(' '+' Args ')'              { Add $3 }
     | '(' '-' Args ')'              { Sub $3 }
     | '(' '*' Args ')'              { Mul $3 }
@@ -53,13 +54,20 @@ ASA : nat                           { Num $1 }
     | '(' "add1" ASA ')'            { Add1 $3 }
     | '(' "sub1" ASA ')'            { Sub1 $3 }
     | '(' "zero?" ASA ')'           { ZeroP $3 }
-
+    | '(' 'let' Args ')'            { Let $3 }
+    | '(' 'let*' Args ')'           { LetStar $3 }
+    | '(' 'let' Args ')'            { Let $3 }
+     
 -- RETO 2
 -- Completa las producciones para:
---   * identificadores;
+--   * identificadores; 
 --   * let multiparametrico con una o mas asociaciones;
 --   * let* con una o mas asociaciones;
 --   * los no terminales Bindings y Binding.
+
+Binding : '(' var ASA ')'            { ($2, $3 ) }
+
+Bindings : 
 
 Args : ASA ASA                       { [$1, $2] }
      | ASA Args                      { $1 : $2 }
@@ -69,6 +77,8 @@ parseError :: [Token] -> a
 parseError toks = error ("Parse error: " ++ show toks)
 
 type Binding = (String, ASA)
+
+       
 
 data ASA
   = Id String
