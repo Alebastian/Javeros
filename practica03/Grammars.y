@@ -54,8 +54,8 @@ ASA : nat                           { Num $1 }
     | '(' "add1" ASA ')'            { Add1 $3 }
     | '(' "sub1" ASA ')'            { Sub1 $3 }
     | '(' "zero?" ASA ')'           { ZeroP $3 }
-    | '(' 'let' Bindings ASA ')'    { Let $3 }
-    | '(' 'let*' Bindings ASA ')'           { LetStar $3 }
+    | '(' 'let' '(' Bindings ')' ASA ')'    { Let $3 }
+    | '(' 'let*' '('Bindings')' ASA ')'           { LetStar $3 }
      
 -- RETO 2
 -- Completa las producciones para:
