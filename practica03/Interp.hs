@@ -274,7 +274,7 @@ evalNum e = case bigStep e of
 
 evalBool :: ASA -> Maybe Bool
 evalBool e = case bigStep e of
-  Just (Boolean n) -> Just (Boolean n)
+  Just (Boolean n) -> Just n
   _ -> Nothing
 
 evalBinding :: Binding -> Maybe ASA
@@ -283,6 +283,7 @@ evalBinding (_, expression) =
 
 monus :: Int -> Int -> Int
 monus n m = if n < m 
+            then 0
             else n - m
 
 compara :: (Int -> Int -> Bool) -> [Int] -> Bool
