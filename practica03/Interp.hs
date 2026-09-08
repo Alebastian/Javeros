@@ -156,3 +156,140 @@ sustMany expr env = case expr of
 -- RETO 4: semantica operacional de paso grande
 -- let es simultaneo; let* se evalua directamente, asociacion por asociacion.
 bigStep :: ASA -> Maybe ASA
+bigStep (Id _) = Nothing
+bigStep (Num n) = Just (Num n)
+bigStep (Boolean b) = Just (Boolean b)
+
+bigStep (And xs) = case mapM evalBool xs of
+  Nothing -> Nothing
+  Just v -> Just (Boolean (and v))
+
+bigStep (Or xs) = case mapM evalBool xs of
+  Nothing -> Nothing
+  Just v -> Just (Boolean (or v))
+
+bigStep (Add xs) = case mapM evalNum xs of
+  Nothing -> Nothing
+  Just v -> Just (Num (sum v))
+
+bigStep (Sub []) = Nothing
+bigStep (Sub (x:xs)) = case evalNum x of
+  Nothing -> Nothing
+  Just v -> case mapM evalNum xs of
+    Nothing -> Nothing
+    Just w -> Just (Num (foldl monus v w))
+
+bigStep (Mul xs) = case mapM evalNum xs of
+  Nothing -> Nothing
+  Just v -> Just (Num (product v))
+
+bigStep (Div []) = Nothing
+bigStep (Div (x:xs)) = case evalNum x of
+  Nothing -> Nothing
+  Just v -> case mapM evalNum xs of
+    Nothing -> Nothing
+    Just w -> if 0 `elem` w 
+                then Nothing
+                else Just (Num (foldl div v w))
+
+bigStep (Lt xs) = case mapM evalNum xs of
+  Nothing -> Nothing
+  Just values -> Just (Boolean (compara (<) values))
+
+bigStep (Gt xs) = case mapM evalNum xs of
+  Nothing -> Nothing
+  Just values -> Just (Boolean (compara (>) values))
+
+bigStep (Le xs) = case mapM evalNum xs of
+  Nothing -> Nothing
+  Just values -> Just (Boolean (compara (<=) values))
+
+bigStep (Ge xs) = case mapM evalNum xs of
+  Nothing -> Nothing
+  Just values -> Just (Boolean (compara (>=) values))
+
+bigStep (Expt e1 e2) =
+  case evalNum e1 of
+    Nothing -> Nothing
+    Just x -> case evalNum e2 of 
+      Nothing -> Nothing
+      Just y -> if y < 0
+                  then Nothing
+                  else Just (Num (x ^ y))
+
+bigStep (EqP e1 e2) = 
+  case (bigStep e1, bigStep e2) of 
+    (Just (Num x), Just (Num y)) -> Just (Boolean (x == y))
+    (Just (Boolean a), Just (Boolean b)) -> Just (Boolean (a == b))
+
+    _ -> Nothing
+
+bigStep (Not e) =
+  case bigStep e of 
+    Just (Boolean b) -> Just (Boolean (not b))
+    Just (Num _) -> Just (Boolean (False))
+    Nothing -> Nothing
+
+bigStep (Add1 e) = 
+  case evalNum e of
+    Nothing -> Nothing
+    Just n -> Just (Num (n + 1))
+
+bigStep (Sub1 e) = 
+  case evalNum e of
+    Nothing -> Nothing
+    Just n -> Just (Num (monus n 1))
+
+bigStep (ZeroP e) = 
+  case evalNum e of 
+    Nothing -> Nothing
+    Just n -> Just (Boolean (n == 0))
+
+bigStep (Let bindings body) =
+  case mapM evalBinding bindings of
+    Nothing -> Nothing
+    Just values ->
+      let variables = map fst bindings
+          environment = zip variables values
+          body' = sustMany body environment
+      in bigStep body'
+
+bigStep (LetStar [] body) =
+  bigStep body
+
+bigStep (LetStar ((x, expression) : bindings) body) =
+  case bigStep expression of
+    Nothing -> Nothing
+    Just value ->
+      case sust (LetStar bindings body) x value of
+        LetStar bindings' body' ->
+          bigStep (LetStar bindings' body')
+        _ -> Nothing
+
+
+evalNum :: ASA -> Maybe Int
+evalNum e = case bigStep e of
+  Just (Num n) -> Just n
+  _ -> Nothing
+
+evalBool :: ASA -> Maybe Bool
+evalBool e = case bigStep e of
+  Just (Boolean n) -> Just (Boolean n)
+  _ -> Nothing
+
+evalBinding :: Binding -> Maybe ASA
+evalBinding (_, expression) =
+  bigStep expression
+
+monus :: Int -> Int -> Int
+monus n m = if n < m 
+            else n - m
+
+compara :: (Int -> Int -> Bool) -> [Int] -> Bool
+compara _ [] = True
+compara _ [_] = True
+compara op (x:y:resto) = if op x y 
+                            then compara op (y:resto)
+                            else False
+
+                  
