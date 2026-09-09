@@ -1,6 +1,7 @@
 module Interp where
 
 import Grammars
+import Data.List (union, (\\), nub, lookup)
 
 freeVars :: ASA -> [String]
 freeVars (Id x) = [x]

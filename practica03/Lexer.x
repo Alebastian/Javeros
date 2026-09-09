@@ -16,47 +16,42 @@ $idrest = [A-Za-z0-9_]
 
 tokens :-
 
-  $white+               ;
+  $white+                 ;
 
-  -- Sintaxis heredada del laboratorio 02
-  \(                    { \_ -> TokenPA }
-  \)                    { \_ -> TokenPC }
-  \+                    { \_ -> TokenSuma }
-  \-                    { \_ -> TokenResta }
-  \*                    { \_ -> TokenMul }
-  \/                    { \_ -> TokenDiv }
-  "<="                  { \_ -> TokenLE }
-  ">="                  { \_ -> TokenGE }
-  \<                    { \_ -> TokenLT }
-  \>                    { \_ -> TokenGT }
-  and                   { \_ -> TokenAnd }
-  or                    { \_ -> TokenOr }
-  not                   { \_ -> TokenNot }
-  add1                  { \_ -> TokenAdd1 }
-  sub1                  { \_ -> TokenSub1 }
-  "zero?"               { \_ -> TokenZeroP }
-  expt                  { \_ -> TokenExpt }
-  eq                    { \_ -> TokenEq }
+  -- Sintaxis heredada
+  \(                      { \_ -> TokenPA }
+  \)                      { \_ -> TokenPC }
+  \+                      { \_ -> TokenSuma }
+  \-                      { \_ -> TokenResta }
+  \*                      { \_ -> TokenMul }
+  \/                      { \_ -> TokenDiv }
+  "<="                    { \_ -> TokenLE }
+  ">="                    { \_ -> TokenGE }
+  \<                      { \_ -> TokenLT }
+  \>                      { \_ -> TokenGT }
+  and                     { \_ -> TokenAnd }
+  or                      { \_ -> TokenOr }
+  not                     { \_ -> TokenNot }
+  add1                    { \_ -> TokenAdd1 }
+  sub1                    { \_ -> TokenSub1 }
+  "zero?"                 { \_ -> TokenZeroP }
+  expt                    { \_ -> TokenExpt }
+  eq                      { \_ -> TokenEq }
 
-  "#t"                  { \_ -> TokenBool True }
-  "#f"                  { \_ -> TokenBool False }
+  "#t"                    { \_ -> TokenBool True }
+  "#f"                    { \_ -> TokenBool False }
 
-  let                   { \_ -> TokenLet }
-  let*                  { \_ -> TokenLetStar }
-  [A-Za-z_][A-Za-z0-9_]*        { \_ -> TokenId x}
+  -- RETO 1: Palabras reservadas ANTES de los identificadores generales
+  let                     { \_ -> TokenLet }
+  let\*                   { \_ -> TokenLetStar }
+  
+  -- Identificadores
+  $letter $idrest*         { \s -> TokenId s }
 
-  0$digit+              { \s -> error ("Lexical error: natural con cero inicial = "
-                                      ++ show s) }
-  @nat                  { \s -> TokenNum (read s) }
+  0$digit+                { \s -> error ("Lexical error: natural con cero inicial = " ++ show s) }
+  @nat                    { \s -> TokenNum (read s) }
 
-  -- RETO 1
-  -- Agrega, en el orden correcto, las reglas para:
-  --   let, let* e identificadores.
-
-  .                     { \s -> error ("Lexical error: caracter no reconocido = "
-                                      ++ show s
-                                      ++ " | codepoints = "
-                                      ++ show (map fromEnum s)) }
+  .                       { \s -> error ("Lexical error: caracter no reconocido = " ++ show s) }
 
 {
 data Token

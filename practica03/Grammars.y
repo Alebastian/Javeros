@@ -2,6 +2,7 @@
 module Grammars where
 
 import Lexer (Token(..))
+import Data.List (union, (\\), nub)
 }
 
 %name parse
@@ -54,17 +55,11 @@ ASA : nat                           { Num $1 }
     | '(' "add1" ASA ')'            { Add1 $3 }
     | '(' "sub1" ASA ')'            { Sub1 $3 }
     | '(' "zero?" ASA ')'           { ZeroP $3 }
-    | '(' 'let' '(' Bindings ')' ASA ')'    { Let $3 }
-    | '(' 'let*' '('Bindings')' ASA ')'           { LetStar $3 }
-     
--- RETO 2
--- Completa las producciones para:
---   * identificadores; 
---   * let multiparametrico con una o mas asociaciones;
---   * let* con una o mas asociaciones;
---   * los no terminales Bindings y Binding.
+    | '(' "let" '(' Bindings ')' ASA ')'     { Let $4 $6 }
+    | '(' "let*" '(' Bindings ')' ASA ')'    { LetStar $4 $6 }
 
-Binding : '(' var ASA ')'            { ($2, $3 ) }
+-- RETO 2
+Binding : '(' var ASA ')'            { ($2, $3) }
 
 Bindings : Binding                   { [$1] }
          | Binding Bindings          { $1 : $2 }
@@ -77,8 +72,6 @@ parseError :: [Token] -> a
 parseError toks = error ("Parse error: " ++ show toks)
 
 type Binding = (String, ASA)
-
-       
 
 data ASA
   = Id String
