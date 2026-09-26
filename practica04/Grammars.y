@@ -2,7 +2,6 @@
 module Grammars where
 
 import Lexer (Token(..))
-import Data.List (union, (\\), nub)
 }
 
 %name parse
@@ -15,85 +14,57 @@ import Data.List (union, (\\), nub)
       bool            { TokenBool $$ }
       '+'             { TokenSuma }
       '-'             { TokenResta }
-      '*'             { TokenMul }
-      '/'             { TokenDiv }
-      "and"           { TokenAnd }
-      "or"            { TokenOr }
       "not"           { TokenNot }
-      "add1"          { TokenAdd1 }
-      "sub1"          { TokenSub1 }
-      "zero?"         { TokenZeroP }
-      "expt"          { TokenExpt }
-      '<'             { TokenLT }
-      '>'             { TokenGT }
-      "<="            { TokenLE }
-      ">="            { TokenGE }
-      "eq"            { TokenEq }
       "let"           { TokenLet }
       "let*"          { TokenLetStar }
+      "lambda"        { TokenLambda }
       '('             { TokenPA }
       ')'             { TokenPC }
 
 %%
 
-ASA : nat                           { Num $1 }
-    | bool                          { Boolean $1 }
-    | var                           { Id $1 }
-    | '(' '+' Args ')'              { Add $3 }
-    | '(' '-' Args ')'              { Sub $3 }
-    | '(' '*' Args ')'              { Mul $3 }
-    | '(' '/' Args ')'              { Div $3 }
-    | '(' "and" Args ')'            { And $3 }
-    | '(' "or" Args ')'             { Or $3 }
-    | '(' '<' Args ')'              { Lt $3 }
-    | '(' '>' Args ')'              { Gt $3 }
-    | '(' "<=" Args ')'             { Le $3 }
-    | '(' ">=" Args ')'             { Ge $3 }
-    | '(' "expt" ASA ASA ')'        { Expt $3 $4 }
-    | '(' "eq" ASA ASA ')'          { EqP $3 $4 }
-    | '(' "not" ASA ')'             { Not $3 }
-    | '(' "add1" ASA ')'            { Add1 $3 }
-    | '(' "sub1" ASA ')'            { Sub1 $3 }
-    | '(' "zero?" ASA ')'           { ZeroP $3 }
-    | '(' "let" '(' Bindings ')' ASA ')'     { Let $4 $6 }
-    | '(' "let*" '(' Bindings ')' ASA ')'    { LetStar $4 $6 }
+SASA : var                               { IdS $1 }
+     | nat                               { NumS $1 }
+     | bool                              { BooleanS $1 }
+     | '(' '+' Operands ')'              { AddS $3 }
+     | '(' '-' Operands ')'              { SubS $3 }
+     | '(' "not" SASA ')'                { NotS $3 }
+     | '(' "let" '(' var SASA ')' SASA ')'
+                                         { LetS $4 $5 $7 }
+     | '(' "let*" '(' Bindings ')' SASA ')'
+                                         { LetStarS $4 $6 }
+     | '(' "lambda" '(' Params ')' SASA ')'
+                                         { FunS $4 $6 }
+     | '(' SASA Arguments ')'            { AppS $2 $3 }
 
--- RETO 2
-Binding : '(' var ASA ')'            { ($2, $3) }
+Params : var                             { [$1] }
+       | var Params                      { $1 : $2 }
 
-Bindings : Binding                   { [$1] }
-         | Binding Bindings          { $1 : $2 }
+Arguments : SASA                         { [$1] }
+          | SASA Arguments               { $1 : $2 }
 
-Args : ASA ASA                       { [$1, $2] }
-     | ASA Args                      { $1 : $2 }
+Operands : SASA SASA                     { [$1, $2] }
+         | SASA Operands                 { $1 : $2 }
+
+Bindings : '(' var SASA ')'              { [($2, $3)] }
+         | '(' var SASA ')' Bindings     { ($2, $3) : $5 }
 
 {
 parseError :: [Token] -> a
-parseError toks = error ("Parse error: " ++ show toks)
+parseError tokens = error ("Parse error: " ++ show tokens)
 
-type Binding = (String, ASA)
+type Nombre = String
 
-data ASA
-  = Id String
-  | Num Int
-  | Boolean Bool
-  | And [ASA]
-  | Or [ASA]
-  | Add [ASA]
-  | Sub [ASA]
-  | Mul [ASA]
-  | Div [ASA]
-  | Lt [ASA]
-  | Gt [ASA]
-  | Le [ASA]
-  | Ge [ASA]
-  | Expt ASA ASA
-  | EqP ASA ASA
-  | Not ASA
-  | Add1 ASA
-  | Sub1 ASA
-  | ZeroP ASA
-  | Let [Binding] ASA
-  | LetStar [Binding] ASA
+data SASA
+  = IdS Nombre
+  | NumS Int
+  | BooleanS Bool
+  | AddS [SASA]
+  | SubS [SASA]
+  | NotS SASA
+  | LetS Nombre SASA SASA
+  | LetStarS [(Nombre, SASA)] SASA
+  | FunS [Nombre] SASA
+  | AppS SASA [SASA]
   deriving (Eq, Show)
 }

@@ -16,42 +16,30 @@ $idrest = [A-Za-z0-9_]
 
 tokens :-
 
-  $white+                 ;
+  $white+               ;
 
-  -- Sintaxis heredada
-  \(                      { \_ -> TokenPA }
-  \)                      { \_ -> TokenPC }
-  \+                      { \_ -> TokenSuma }
-  \-                      { \_ -> TokenResta }
-  \*                      { \_ -> TokenMul }
-  \/                      { \_ -> TokenDiv }
-  "<="                    { \_ -> TokenLE }
-  ">="                    { \_ -> TokenGE }
-  \<                      { \_ -> TokenLT }
-  \>                      { \_ -> TokenGT }
-  and                     { \_ -> TokenAnd }
-  or                      { \_ -> TokenOr }
-  not                     { \_ -> TokenNot }
-  add1                    { \_ -> TokenAdd1 }
-  sub1                    { \_ -> TokenSub1 }
-  "zero?"                 { \_ -> TokenZeroP }
-  expt                    { \_ -> TokenExpt }
-  eq                      { \_ -> TokenEq }
+  \(                    { \_ -> TokenPA }
+  \)                    { \_ -> TokenPC }
+  \+                    { \_ -> TokenSuma }
+  \-                    { \_ -> TokenResta }
+  not                   { \_ -> TokenNot }
+  let\*                 { \_ -> TokenLetStar }
+  let                   { \_ -> TokenLet }
+  lambda                { \_ -> TokenLambda }
 
-  "#t"                    { \_ -> TokenBool True }
-  "#f"                    { \_ -> TokenBool False }
+  "#t"                  { \_ -> TokenBool True }
+  "#f"                  { \_ -> TokenBool False }
 
-  -- RETO 1: Palabras reservadas ANTES de los identificadores generales
-  let                     { \_ -> TokenLet }
-  let\*                   { \_ -> TokenLetStar }
-  
-  -- Identificadores
-  $letter $idrest*         { \s -> TokenId s }
+  0$digit+              { \s -> error ("Lexical error: natural con cero inicial = "
+                                      ++ show s) }
+  @nat                  { \s -> TokenNum (read s) }
 
-  0$digit+                { \s -> error ("Lexical error: natural con cero inicial = " ++ show s) }
-  @nat                    { \s -> TokenNum (read s) }
+  $letter$idrest*       { \s -> TokenId s }
 
-  .                       { \s -> error ("Lexical error: caracter no reconocido = " ++ show s) }
+  .                     { \s -> error ("Lexical error: caracter no reconocido = "
+                                      ++ show s
+                                      ++ " | codepoints = "
+                                      ++ show (map fromEnum s)) }
 
 {
 data Token
@@ -60,22 +48,10 @@ data Token
   | TokenBool Bool
   | TokenSuma
   | TokenResta
-  | TokenMul
-  | TokenDiv
-  | TokenAnd
-  | TokenOr
   | TokenNot
-  | TokenAdd1
-  | TokenSub1
-  | TokenZeroP
-  | TokenExpt
-  | TokenLT
-  | TokenGT
-  | TokenLE
-  | TokenGE
-  | TokenEq
   | TokenLet
   | TokenLetStar
+  | TokenLambda
   | TokenPA
   | TokenPC
   deriving (Eq, Show)

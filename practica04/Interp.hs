@@ -26,6 +26,13 @@ type Env = [(Nombre, Value)]
 -- Convierte una lista no vacia de parametros distintos en funciones
 -- unarias anidadas. El primer parametro queda en la funcion exterior.
 curryFun :: [Nombre] -> ASA -> Maybe ASA
+curryFun [] _ = Nothing
+curryFun [x] e = Just(Fun x e)
+crryFun (x:xs) e 
+    | x `elem` xs = Nothing
+    | otherwise = case curryFun xs e of
+        Just v -> Just(Fun x v)
+        Nothing -> Nothing
 
 -- Convierte una aplicacion con uno o mas argumentos en aplicaciones unarias
 -- asociadas por la izquierda.
