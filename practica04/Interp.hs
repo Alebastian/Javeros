@@ -37,10 +37,13 @@ crryFun (x:xs) e
 -- Convierte una aplicacion con uno o mas argumentos en aplicaciones unarias
 -- asociadas por la izquierda.
 curryApp :: ASA -> [ASA] -> Maybe ASA
+curryApp _ [] = Nothing
+curryApp e xs = Just (foldl App e xs)
 
 -- Convierte dos o mas operandos en operaciones binarias asociadas por la
 -- izquierda. El constructor recibido sera Add o Sub.
 binaryOp :: (ASA -> ASA -> ASA) -> [ASA] -> Maybe ASA
+
 
 -- Convierte las ligaduras de let* en let anidados y despues elimina cada let
 -- mediante LetS x e1 e2 ==> App (Fun x e2') e1'. La primera ligadura debe
@@ -51,6 +54,10 @@ desugar :: SASA -> Maybe ASA
 
 -- Busca la asociacion mas reciente de un identificador.
 lookupEnv :: Nombre -> Env -> Maybe Value
+lookUp _ [] = Nothing
+lookUp _ ((nombre, value):xs)
+    | x == nombre = Just value
+    | otherwise = lookUpEnv x xs
 
 -- Evalua con alcance estatico. Fun produce una cerradura con el ambiente
 -- actual. App evalua primero la posicion de funcion, despues el argumento y
@@ -59,3 +66,23 @@ lookupEnv :: Nombre -> Env -> Maybe Value
 -- Conserva la resta truncada y la convencion de que todo numero cuenta como
 -- verdadero cuando aparece como operando de Not.
 bigStep :: Env -> ASA -> Maybe Value
+bigStep _ (Num n) = Just(NumV v)
+bigStep _ (Boolean b) = Just(BooleanV b)
+bigStep _ Not(e) = do
+    v <- bigStep env e
+    case v of
+        Boolean(b) = Just (BooleanV(not b)))
+bigStep env Id(s) = lookUp s xs
+bigStep env (Fun x e) = Just(ClousereV x e env )
+bigStep env (Add a b) = do
+    NumV a <- bigStep env a
+    NumV b <- bigStep en v
+    Just (NumV (a + b))
+bigStep env (Sub a b) = do
+    NumV a <- bigStep env a
+    NumV b <- bigStep env b
+    Just(NumV (max 0 (a b)))
+bigStep env (App f a) = do
+    ClousureV x c clousereEnv <- bigStep env f
+
+
