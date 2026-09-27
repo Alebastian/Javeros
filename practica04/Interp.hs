@@ -27,11 +27,11 @@ type Env = [(Nombre, Value)]
 -- unarias anidadas. El primer parametro queda en la funcion exterior.
 curryFun :: [Nombre] -> ASA -> Maybe ASA
 curryFun [] _ = Nothing
-curryFun [x] e = Just(Fun x e)
-crryFun (x:xs) e 
+curryFun [x] e = Just (Fun x e)
+curryFun (x:xs) e
     | x `elem` xs = Nothing
     | otherwise = case curryFun xs e of
-        Just v -> Just(Fun x v)
+        Just v  -> Just (Fun x v)
         Nothing -> Nothing
 
 -- Convierte una aplicacion con uno o mas argumentos en aplicaciones unarias
@@ -43,21 +43,45 @@ curryApp e xs = Just (foldl App e xs)
 -- Convierte dos o mas operandos en operaciones binarias asociadas por la
 -- izquierda. El constructor recibido sera Add o Sub.
 binaryOp :: (ASA -> ASA -> ASA) -> [ASA] -> Maybe ASA
-
+binaryOp _ []     = Nothing
+binaryOp _ [_]    = Nothing
+binaryOp op (x:xs) = Just (foldl op x xs)
 
 -- Convierte las ligaduras de let* en let anidados y despues elimina cada let
 -- mediante LetS x e1 e2 ==> App (Fun x e2') e1'. La primera ligadura debe
 -- quedar en el let exterior para que las siguientes puedan usarla.
 desugar :: SASA -> Maybe ASA
+desugar (NumS n)     = Just (Num n)
+desugar (BooleanS b) = Just (Boolean b)
+desugar (IdS x)      = Just (Id x)
+desugar (NotS e) = do
+    de <- desugar e
+    Just (Not de)
+desugar (AddS args) = mapM desugar args >>= binaryOp Add
+desugar (SubS args) = mapM desugar args >>= binaryOp Sub
+desugar (FunS params body) = do
+    dBody <- desugar body
+    curryFun params dBody
+desugar (AppS f args) = do
+    df   <- desugar f
+    dArgs <- mapM desugar args
+    curryApp df dArgs
+desugar (LetS x e1 e2) = do
+    de1 <- desugar e1
+    de2 <- desugar e2
+    Just (App (Fun x de2) de1)
+desugar (LetStarS [] body) = desugar body
+desugar (LetStarS ((x, e):bindings) body) =
+    desugar (LetS x e (LetStarS bindings body))
 
 -- RETO 2: evaluacion con cerraduras ---------------------------------------
 
 -- Busca la asociacion mas reciente de un identificador.
 lookupEnv :: Nombre -> Env -> Maybe Value
-lookUp _ [] = Nothing
-lookUp _ ((nombre, value):xs)
+lookupEnv _ [] = Nothing
+lookupEnv x ((nombre, value):xs)
     | x == nombre = Just value
-    | otherwise = lookUpEnv x xs
+    | otherwise   = lookupEnv x xs
 
 -- Evalua con alcance estatico. Fun produce una cerradura con el ambiente
 -- actual. App evalua primero la posicion de funcion, despues el argumento y
@@ -66,23 +90,32 @@ lookUp _ ((nombre, value):xs)
 -- Conserva la resta truncada y la convencion de que todo numero cuenta como
 -- verdadero cuando aparece como operando de Not.
 bigStep :: Env -> ASA -> Maybe Value
-bigStep _ (Num n) = Just(NumV v)
-bigStep _ (Boolean b) = Just(BooleanV b)
-bigStep _ Not(e) = do
+bigStep _   (Num n)     = Just (NumV n)
+bigStep _   (Boolean b) = Just (BooleanV b)
+bigStep env (Id s)      = lookupEnv s env
+bigStep env (Fun x e)   = Just (ClosureV x e env)
+bigStep env (Not e) = do
     v <- bigStep env e
     case v of
-        Boolean(b) = Just (BooleanV(not b)))
-bigStep env Id(s) = lookUp s xs
-bigStep env (Fun x e) = Just(ClousereV x e env )
-bigStep env (Add a b) = do
-    NumV a <- bigStep env a
-    NumV b <- bigStep en v
-    Just (NumV (a + b))
-bigStep env (Sub a b) = do
-    NumV a <- bigStep env a
-    NumV b <- bigStep env b
-    Just(NumV (max 0 (a b)))
+        BooleanV b -> Just (BooleanV (not b))
+        _          -> Just (BooleanV False)
+bigStep env (Add e1 e2) = do
+    v1 <- bigStep env e1
+    v2 <- bigStep env e2
+    case (v1, v2) of
+        (NumV n1, NumV n2) -> Just (NumV (n1 + n2))
+        _                  -> Nothing
+bigStep env (Sub e1 e2) = do
+    v1 <- bigStep env e1
+    v2 <- bigStep env e2
+    case (v1, v2) of
+        (NumV n1, NumV n2) -> Just (NumV (max 0 (n1 - n2)))
+        _                  -> Nothing
 bigStep env (App f a) = do
-    ClousureV x c clousereEnv <- bigStep env f
-
+    cVal <- bigStep env f
+    case cVal of
+        ClosureV x body closureEnv -> do
+            vArg <- bigStep env a
+            seq cVal (seq vArg (bigStep ((x, vArg) : closureEnv) body))
+        _ -> Nothing
 
