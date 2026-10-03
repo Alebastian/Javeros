@@ -42,7 +42,7 @@ SASA : var                               { IdS $1 }
      | '(' SASA Arguments ')'            { AppS $2 $3 }
      | '(' "if" SASA SASA SASA ')'       { IfS $3 $4 $5}
      | '(' "cond" '(' SASA SASA ')' Clauses ')'       
-                                         { CondS ($3, $4 : $7) $8}
+                                         { CondS (($4, $5) : fst $7) (snd $7)}
      | '(' "letrec" '(' var SASA ')' SASA ')'
                                          { LetRecS $4 $5 $7}
 
@@ -69,8 +69,8 @@ Operands : SASA SASA                     { [$1, $2] }
 Bindings : '(' var SASA ')'              { [($2, $3)] }
          | '(' var SASA ')' Bindings     { ($2, $3) : $5 }
 
-Clauses : '(' "else" SASA ')'            { [([], $3)] }
-         |'(' SASA SASA')' Clauses       { ($2, $3) : fst $5, snd $5}
+Clauses : '(' "else" SASA ')'            { ([], $3) }
+         | '(' SASA SASA ')' Clauses     { (($2, $3) : fst $5, snd $5) }
 
 {
 parseError :: [Token] -> a
