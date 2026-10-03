@@ -33,7 +33,7 @@ tokens :-
   if                    { \_ -> TokenIf }
   cond                  { \_ -> TokenCond }
   else                  { \_ -> TokenElse }
-  letrec                { \_ -> TokenLetrec }
+  letrec                { \_ -> TokenLetRec }
   "#t"                  { \_ -> TokenBool True }
   "#f"                  { \_ -> TokenBool False }
 

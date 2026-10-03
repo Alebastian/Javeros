@@ -40,6 +40,11 @@ SASA : var                               { IdS $1 }
      | '(' "lambda" '(' Params ')' SASA ')'
                                          { FunS $4 $6 }
      | '(' SASA Arguments ')'            { AppS $2 $3 }
+     | '(' "if" SASA SASA SASA ')'       { IfS $3 $4 $5}
+     | '(' "cond" '(' SASA SASA ')' Clauses ')'       
+                                         { CondS ($3, $4 : $7) $8}
+     | '(' "letrec" '(' var SASA ')' SASA ')'
+                                         { LetRecS $4 $5 $7}
 
      -- RETO 2
      -- Agrega aqui las producciones de:
@@ -63,6 +68,9 @@ Operands : SASA SASA                     { [$1, $2] }
 
 Bindings : '(' var SASA ')'              { [($2, $3)] }
          | '(' var SASA ')' Bindings     { ($2, $3) : $5 }
+
+Clauses : '(' "else" SASA ')'            { [([], $3)] }
+         |'(' SASA SASA')' Clauses       { ($2, $3) : fst $5, snd $5}
 
 {
 parseError :: [Token] -> a
