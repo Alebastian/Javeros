@@ -30,7 +30,13 @@ type Env = [(Nombre, Value)]
 -- del nucleo siguen siendo unarias, y las operaciones siguen siendo binarias.
 curryFun :: [Nombre] -> ASA -> Maybe ASA
 curryFun []     e = Just e
-curryFun (x:xs) e = Fun x <$> curryFun xs e
+curryFun [x]    e = Just (Fun x e)
+curryFun (x:xs) e 
+  | x `elem` xs = Nothing
+  | otherwise = empaqueta $ curryFun xs e
+  where empaqueta :: Maybe ASA -> Maybe ASA
+        empaqueta Nothing = Nothing
+        empaqueta (Just e') = Just (Fun x e')
 
 curryApp :: ASA -> [ASA] -> Maybe ASA
 curryApp f []     = Just f
@@ -61,43 +67,58 @@ desugar :: SASA -> Maybe ASA
 desugar (IdS x)       = Just (Id x)
 desugar (NumS n)      = Just (Num n)
 desugar (BooleanS b)  = Just (Boolean b)
-desugar (AddS es)     = mapM desugar es >>= binaryOp Add
-desugar (SubS es)     = mapM desugar es >>= binaryOp Sub
-desugar (NotS e)      = Not <$> desugar e
-desugar (LetS x e1 e2) =
-  desugar e1 >>= \e1' ->
-  desugar e2 >>= \e2' ->
-  Just (App (Fun x e2') e1')
+desugar (AddS es)     = desempaquetaBinOp Add $ mapM desugar es
+desugar (SubS es)     = desempaquetaBinOp Sub $ mapM desugar es
+desugar (NotS e)      = desempaquetaUnOp Not $ desugar e
+desugar (LetS x e1 e2) = desempaquetaDosMaybe (desugar e1) (desugar e2)
+  where 
+    desempaquetaDosMaybe :: Maybe ASA -> Maybe ASA -> Maybe ASA
+    desempaquetaDosMaybe (Just e1') (Just e2') = Just (App (Fun x e2') e1')
+    desempaquetaDosMaybe _ _ = Nothing
+desugar (FunS xs e) = desempaquetaFun (desugar e)
+  where 
+    desempaquetaFun :: Maybe ASA -> Maybe ASA
+    desempaquetaFun (Just e') = curryFun xs e'
+    desempaquetaFun Nothing = Nothing
+desugar (AppS f args) = desempaquetaApp (desugar f) (mapM desugar args)
+  where 
+    desempaquetaApp :: Maybe ASA -> Maybe [ASA] -> Maybe ASA
+    desempaquetaApp (Just f') (Just args') = curryApp f' args'
+    desempaquetaApp _ _ = Nothing
+desugar (IfS c t e) = desempaquetaTresMaybe (desugar c) (desugar t) (desugar e)
+  where 
+    desempaquetaTresMaybe :: Maybe ASA -> Maybe ASA -> Maybe ASA -> Maybe ASA
+    desempaquetaTresMaybe (Just c') (Just t') (Just e') = Just (If c' t' e')
+    desempaquetaTresMaybe _ _ _ = Nothing
+
+desugar (CondS cs e) = desugarCond cs e
+desugar (LetRecS f def body) = desugar (LetS f (AppS (IdS "Y") [FunS [f] def]) body)
 desugar (LetStarS bindings body) =
   desugar (foldr (\(x, e) acc -> LetS x e acc) body bindings)
-desugar (FunS xs e)   = curryFun xs =<< desugar e
-desugar (AppS f args) =
-  desugar f >>= \f' ->
-  mapM desugar args >>= \args' ->
-  curryApp f' args'
-desugar (IfS c t e) =
-  desugar c >>= \c' ->
-  desugar t >>= \t' ->
-  desugar e >>= \e' ->
-  Just (If c' t' e')
-desugar (CondS cs elseExpr) = desugarCond cs elseExpr
-desugar (LetRecS f def body) =
-  desugar (LetS f (AppS (IdS "Y") (FunS [f] def)) body)
+
+desempaquetaBinOp :: (ASA -> ASA -> ASA) -> Maybe [ASA] -> Maybe ASA
+desempaquetaBinOp op (Just es) = binaryOp op es
+desempaquetaBinOp _ Nothing = Nothing
+
+desempaquetaUnOp :: (ASA -> ASA) -> Maybe ASA -> Maybe ASA
+desempaquetaUnOp op (Just e) = Just (op e)
+desempaquetaUnOp _ Nothing = Nothing
+
 
 -- RETO 4: evaluacion perezosa con alcance estatico ------------------------
 
 -- Busca la asociacion mas reciente sin exigir su contenido.
 lookupEnv :: Nombre -> Env -> Maybe Value
 lookupEnv _ [] = Nothing
-lookupEnv x ((y, v) : env)
-  | x == y    = Just v
-  | otherwise = lookupEnv x env
+lookupEnv x ((y, v) : resto)
+  | x == y = Just v
+  | otherwise = lookupEnv x resto
 
 -- Exige una cerradura de expresion usando el ambiente guardado. Si al
 -- evaluarla se obtiene otra ExprV, continua hasta producir otro valor.
 strict :: Value -> Maybe Value
-strict (ExprV e env) = bigStep env e >>= strict
-strict v             = Just v
+strict (ExprV e amb) = maybe Nothing strict (bigStep amb e)
+strict v = Just v
 
 -- Semantica de paso grande con alcance estatico y evaluacion perezosa.
 --
