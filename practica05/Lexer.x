@@ -30,7 +30,10 @@ tokens :-
   -- RETO 1
   -- Agrega aqui las reglas para if, cond, else y letrec. Las palabras
   -- reservadas deben aparecer antes de la regla general de identificadores.
-
+  if                    { \_ -> TokenIf }
+  cond                  { \_ -> TokenCond }
+  else                  { \_ -> TokenElse }
+  letrec                { \_ -> TokenLetrec }
   "#t"                  { \_ -> TokenBool True }
   "#f"                  { \_ -> TokenBool False }
 
