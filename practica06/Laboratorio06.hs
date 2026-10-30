@@ -33,10 +33,12 @@ reversa [] = []
 reversa (x : xs) = reversa xs ++ [x]
 
 reversaCola :: [a] -> [a]
-reversaCola = undefined
+reversaCola [] acc = acc
+reversaCola (x:xs) acc = reversaCola xs (x:acc) 
 
 reversaCPS :: [a] -> ([a] -> r) -> r
-reversaCPS = undefined
+reversaCPS [] k = k []
+reversaCPS (x:xs) k = testReversaCPS xs (\v -> k(v++[x]))
 
 -- 4. Concatenacion de una lista de listas ---------------------------------
 
@@ -44,11 +46,13 @@ concatena :: [[a]] -> [a]
 concatena [] = []
 concatena (xs : xss) = xs ++ concatena xss
 
-concatenaCola :: [[a]] -> [a]
-concatenaCola = undefined
+concatenaCola :: [[a]] -> [a] -> [a]
+concatenaCola [] acc = acc 
+concatenaCola (x:xss) acc = concatenaCola xs (x ++ acc)
 
 concatenaCPS :: [[a]] -> ([a] -> r) -> r
-concatenaCPS = undefined
+concatenaCPS [] k = k []
+concatenaCPS (x:xs) k = concatenaCPS xs (\v (k(x++v)))
 
 -- 5. Intercalado de dos listas --------------------------------------------
 
